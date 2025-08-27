@@ -121,14 +121,14 @@ class AgentApp(QDialog):
 
     def update_ai_response(self, token):
         """動態更新 AI 回覆到泡泡 QLabel"""
-        if self.ai_label:  # self.ai_label 是 QLabel，不是 QListWidgetItem
+        if self.ai_label:
             # 1. 文字追加到 QLabel
             self.ai_label.setText(self.ai_label.text() + token)
 
-            # # 2. 調整 QLabel 尺寸
-            # self.ai_label.adjustSize()
+            # 2. 強制重新計算尺寸
+            self.ai_label.adjustSize()
 
-            # 3. 更新 QListWidgetItem 高度
+            # 3. 根據尺寸更新 QListWidgetItem 高度
             self.ai_item.setSizeHint(self.ai_label.sizeHint())
 
             # 4. 自動捲動到底
