@@ -1,55 +1,111 @@
 from PyQt5.QtWidgets import QApplication, QDialog, QListWidgetItem
-from PyQt5.QtGui import QFont, QColor, QIcon
+from PyQt5.QtGui import QFont
 from PyQt5 import uic
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import sys
-# from resources_rc import *  # qrc 資源檔，包含 agent.png 與 user.png
+from openai import OpenAI
+from cloud_keys import OPENAI_API_KEY
 
 
-class MyApp(QDialog):
+# -----------------------
+# 背景 Worker：收 AI stream
+# -----------------------
+class ChatWorker(QThread):
+    new_token = pyqtSignal(str)   # 每次收到 token 就丟給 UI
+    finished = pyqtSignal(str)    # stream 結束後丟完整文字
+
+    def __init__(self, client, history, new_sentence):
+        super().__init__()
+        self.client = client
+        self.history = history
+        self.new_sentence = new_sentence
+
+    def run(self):
+        self.history.append({"role": "user", "content": self.new_sentence})
+        stream = self.client.chat.completions.create(
+            model="gpt-4",
+            messages=self.history,
+            stream=True,
+        )
+
+        response = []
+        for chunk in stream:
+            new_word = chunk.choices[0].delta.content
+            if new_word:
+                response.append(new_word)
+                self.new_token.emit(new_word)  # 丟給 UI 更新
+        full_reply = "".join(response)
+        self.history.append({"role": "assistant", "content": full_reply})
+        self.finished.emit(full_reply)
+
+
+# -----------------------
+# 主程式 UI
+# -----------------------
+class AgentApp(QDialog):
     def __init__(self):
         super().__init__()
         uic.loadUi("agent.ui", self)
+        self.setFixedSize(750, 270)
 
-        # 連接送出按鈕
-        self.send_btn.clicked.connect(self.send_message)
+        self.send_btn.clicked.connect(self.record_conversation)
+        self.clear_btn.clicked.connect(self.clear_input)
 
-        # 調整每個聊天項目間距
         self.history_widget.setSpacing(5)
 
-    def send_message(self):
+        # OpenAI Client
+        self.chatbot_client = OpenAI(api_key=OPENAI_API_KEY)
+        self.chat_history = []
+
+        # AI 回覆 item（暫存）
+        self.ai_item = None
+
+    def clear_input(self):
+        self.user_input.clear()
+        self.history_widget.clear()
+        self.chat_history.clear()
+
+    def record_conversation(self):
         text = self.user_input.text().strip()
         if text:
-            # -------------------------
-            # 使用者訊息（右邊，綠色，帶頭像）
-            # -------------------------
-            user_item = QListWidgetItem(f"你說  '{text}' ")
-            # user_item.setBackground(QColor("#52C252"))
-            user_item.setFont(QFont("Arial", 12))
-            user_item.setIcon(QIcon(":/images/user.png"))
-            user_item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-            self.history_widget.addItem(user_item)
-
-            # -------------------------
-            # AI 回覆（左邊，白色，帶頭像）
-            # -------------------------
-            ai_text = f"Agent: '{text}' "
-            ai_item = QListWidgetItem(f"  {ai_text}  ")
-            # ai_item.setBackground(QColor("#E48787"))
-            ai_item.setFont(QFont("Arial", 12))
-            ai_item.setIcon(QIcon(":/images/agent.png"))
-            ai_item.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
-            self.history_widget.addItem(ai_item)
-
-            # 自動捲動到底
+            self.record_user_message(text)
+            self.record_agent_response(text)
+            self.user_input.clear()
             self.history_widget.scrollToBottom()
 
-            # 清空輸入框
-            self.user_input.clear()
+    def record_user_message(self, message):
+        user_item = QListWidgetItem(f"你說: {message}")
+        user_item.setFont(QFont("Arial", 12))
+        user_item.setTextAlignment(Qt.AlignRight)
+        self.history_widget.addItem(user_item)
+
+    def record_agent_response(self, user_message):
+        # 預留一個空 item
+        self.ai_item = QListWidgetItem("")
+        self.ai_item.setFont(QFont("Arial", 12))
+        self.ai_item.setTextAlignment(Qt.AlignLeft)
+        self.history_widget.addItem(self.ai_item)
+
+        # 啟動背景 thread
+        self.worker = ChatWorker(
+            self.chatbot_client, self.chat_history, user_message)
+        self.worker.new_token.connect(self.update_ai_item)   # 即時更新
+        self.worker.finished.connect(self.finish_ai_item)    # stream 結束
+        self.worker.start()
+
+    def update_ai_item(self, token):
+        """動態更新 AI 回覆"""
+        if self.ai_item:
+            self.ai_item.setText(self.ai_item.text() + token)
+            self.history_widget.scrollToBottom()
+
+    def finish_ai_item(self, full_text):
+        """stream 結束"""
+        print("完整回覆：", full_text)
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = MyApp()
+    window = AgentApp()
     window.show()
     sys.exit(app.exec_())
