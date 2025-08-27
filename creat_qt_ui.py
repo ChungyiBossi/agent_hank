@@ -47,8 +47,6 @@ class AgentApp(QDialog):
     def __init__(self):
         super().__init__()
         uic.loadUi("agent.ui", self)
-        self.setFixedSize(935, 472)
-
         self.send_btn.clicked.connect(self.record_conversation)
         self.clear_btn.clicked.connect(self.clear_input)
 
