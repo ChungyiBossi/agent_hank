@@ -1,4 +1,7 @@
-from PyQt5.QtWidgets import QApplication, QDialog, QListWidgetItem
+from PyQt5.QtWidgets import (
+    QApplication, QDialog, QListWidgetItem,
+    QWidget, QLabel, QHBoxLayout
+)
 from PyQt5.QtGui import QFont, QColor
 from PyQt5 import uic
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
@@ -22,6 +25,7 @@ class ChatWorker(QThread):
         self.new_sentence = new_sentence
 
     def run(self):
+        # 紀錄問句
         self.history.append({"role": "user", "content": self.new_sentence})
         stream = self.client.chat.completions.create(
             model="gpt-4",
@@ -73,33 +77,61 @@ class AgentApp(QDialog):
             self.history_widget.scrollToBottom()
 
     def record_user_message(self, message):
-        user_item = QListWidgetItem(f"你說: {message}")
-        user_item.setFont(QFont("Arial", 12))
-        user_item.setBackground(QColor("#CDE7CD"))
-        user_item.setTextAlignment(Qt.AlignLeft)
-        self.history_widget.addItem(user_item)
+        self.add_message(f"你說: {message}", sender="user")
 
     def record_agent_response(self, user_message):
-        # 預留一個空 item
-        self.ai_item = QListWidgetItem("")
-        self.ai_item.setFont(QFont("Arial", 12))
-        self.ai_item.setBackground(QColor("#FFFFFF"))
-        self.ai_item.setTextAlignment(Qt.AlignLeft)
-        self.history_widget.addItem(self.ai_item)
+        self.ai_item = self.add_message("", sender="agent")
 
         # 啟動背景 thread
         self.worker = ChatWorker(
             self.chatbot_client, self.chat_history, user_message)
-        self.worker.new_token.connect(self.update_ai_item)   # 即時更新
+        self.worker.new_token.connect(self.update_ai_response)   # 即時更新
         self.worker.finished.connect(self.finish_ai_item)    # stream 結束
         self.worker.start()
 
-    def update_ai_item(self, token):
-        """動態更新 AI 回覆"""
-        if self.ai_item:
-            self.ai_item.setText(self.ai_item.text() + token)
-            if self.ai_item.text():  # 有東西
-                self.ai_item.setBackground(QColor("#FFEACF"))
+    def add_message(self, message, sender="user"):
+        """
+        sender: "user" → 綠色泡泡
+                "agent" → 白色泡泡
+        """
+        item = QListWidgetItem(self.history_widget)
+        widget = QWidget()
+        layout = QHBoxLayout()
+
+        # 文字泡泡
+        label = QLabel(message)
+        label.setWordWrap(True)
+        label.setFont(QFont("Arial", 12))
+
+        # 顏色依 sender 區分
+        if sender == "user":
+            label.setStyleSheet("background-color: #CDE7CD;")
+        else:
+            label.setStyleSheet("background-color: #FFFFFF;")
+            self.ai_label = label  # 暫存 AI 的 QLabel
+
+        layout.addWidget(label)
+        widget.setLayout(layout)
+
+        item.setSizeHint(widget.sizeHint())
+        self.history_widget.addItem(item)
+        self.history_widget.setItemWidget(item, widget)
+        self.history_widget.scrollToBottom()
+        return item
+
+    def update_ai_response(self, token):
+        """動態更新 AI 回覆到泡泡 QLabel"""
+        if self.ai_label:  # self.ai_label 是 QLabel，不是 QListWidgetItem
+            # 1. 文字追加到 QLabel
+            self.ai_label.setText(self.ai_label.text() + token)
+
+            # # 2. 調整 QLabel 尺寸
+            # self.ai_label.adjustSize()
+
+            # 3. 更新 QListWidgetItem 高度
+            self.ai_item.setSizeHint(self.ai_label.sizeHint())
+
+            # 4. 自動捲動到底
             self.history_widget.scrollToBottom()
 
     def finish_ai_item(self, full_text):
