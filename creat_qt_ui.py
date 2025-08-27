@@ -2,12 +2,35 @@ from PyQt5.QtWidgets import (
     QApplication, QDialog, QListWidgetItem,
     QWidget, QLabel, QHBoxLayout
 )
-from PyQt5.QtGui import QFont, QColor
+from PyQt5.QtGui import QFont
+from PyQt5.QtCore import QUrl, QThread, pyqtSignal
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5 import uic
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+
 import sys
 from openai import OpenAI
 from cloud_keys import OPENAI_API_KEY
+import pyttsx3
+
+import time
+import os
+
+
+class TTSWorker(QThread):
+    done = pyqtSignal(str)   # 音檔生成完後，把句子送回去顯示
+
+    def __init__(self, text):
+        super().__init__()
+        self.text = text
+        self.engine = pyttsx3.init()
+
+    def run(self):
+
+        timestamp = int(time.time() * 1000)  # 毫秒級時間戳
+        filename = f"temp_{timestamp}.wav"
+        self.engine.save_to_file(self.text, filename)
+        self.engine.runAndWait()
+        self.done.emit(filename)   # 音檔生成完成
 
 
 # -----------------------
@@ -53,15 +76,19 @@ class AgentApp(QDialog):
         uic.loadUi("agent.ui", self)
         self.send_btn.clicked.connect(self.record_conversation)
         self.clear_btn.clicked.connect(self.clear_input)
-
         self.history_widget.setSpacing(5)
 
         # OpenAI Client
-        self.chatbot_client = OpenAI(api_key=OPENAI_API_KEY)
+        self.openai_client = OpenAI(api_key=OPENAI_API_KEY)
         self.chat_history = []
+        self.partial_sentence = ""  # 暫時存放成句前的tokens
 
-        # AI 回覆 item（暫存）
-        self.ai_item = None
+        # TTS
+        # self.tts_engine = pyttsx3.init()
+        self.tts_workers = []  # 存所有活著的 worker
+        self.tts_queue = []      # 句子 + 音檔檔名
+        self.player = QMediaPlayer()
+        self.player.mediaStatusChanged.connect(self.on_media_status_changed)
 
     def clear_input(self):
         self.user_input.clear()
@@ -84,7 +111,7 @@ class AgentApp(QDialog):
 
         # 啟動背景 thread
         self.worker = ChatWorker(
-            self.chatbot_client, self.chat_history, user_message)
+            self.openai_client, self.chat_history, user_message)
         self.worker.new_token.connect(self.update_ai_response)   # 即時更新
         self.worker.finished.connect(self.finish_ai_item)    # stream 結束
         self.worker.start()
@@ -120,25 +147,58 @@ class AgentApp(QDialog):
         return item
 
     def update_ai_response(self, token):
-        """動態更新 AI 回覆到泡泡 QLabel"""
-        if self.ai_label:
-            # 1. 文字追加到 QLabel
-            self.ai_label.setText(self.ai_label.text() + token)
+        # 累積文字
+        self.partial_sentence += token
 
-            # 2. 強制重新計算尺寸
-            self.ai_label.adjustSize()
-
-            # 3. 根據尺寸更新 QListWidgetItem 高度
-            self.ai_item.setSizeHint(self.ai_label.sizeHint())
-
-            # 4. 自動捲動到底
-            self.history_widget.scrollToBottom()
+        # 判斷是否一句結束
+        if token in ["。", "，", "！", "？", ".", "!", "?"]:
+            sentence = self.partial_sentence.strip()
+            self.partial_sentence = ""
+            self.send_sentence_to_tts(sentence)   # 丟去生成音檔
 
     def finish_ai_item(self, full_text):
         """stream 結束"""
         print("完整回覆：", full_text)
         print(f"Update History Size:{len(self.chat_history)}")
         # list不需要更新，初始化用的chat_history會直接被reference
+
+    def send_sentence_to_tts(self, sentence):
+        tts_worker = TTSWorker(sentence)
+        tts_worker.done.connect(
+            lambda filename, w=tts_worker, s=sentence:
+            self.on_tts_done(filename, s, w))
+        tts_worker.start()
+        self.tts_workers.append(tts_worker)
+
+    def on_tts_done(self, filename, sentence, worker):
+        # 加入播放佇列
+        self.tts_queue.append((filename, sentence))
+        self.tts_workers.remove(worker)
+        worker.deleteLater()
+        # 如果 player 沒在播，就開始播放
+        if self.player.state() != QMediaPlayer.PlayingState:
+            self.play_next_in_queue()
+
+    def on_media_status_changed(self, status):
+        if status == QMediaPlayer.EndOfMedia:
+            self.play_next_in_queue()
+
+    def play_next_in_queue(self):
+        if not self.tts_queue:
+            return
+        filename, sentence = self.tts_queue.pop(0)
+
+        # 1. 顯示句子（與聲音同步）
+        self.ai_label.setText(self.ai_label.text() + sentence)
+        # 2. 強制重新計算尺寸
+        self.ai_label.adjustSize()
+        # 3. 根據尺寸更新 QListWidgetItem 高度
+        self.ai_item.setSizeHint(self.ai_label.sizeHint())
+        # 4. 自動捲動到底
+        self.history_widget.scrollToBottom()
+        # 播音檔
+        self.player.setMedia(QMediaContent(QUrl.fromLocalFile(filename)))
+        self.player.play()
 
 
 if __name__ == "__main__":
