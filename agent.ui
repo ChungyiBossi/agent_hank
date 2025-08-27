@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>750</width>
-    <height>270</height>
+    <width>935</width>
+    <height>427</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -16,8 +16,8 @@
   <widget class="QLabel" name="agent_pixmap">
    <property name="geometry">
     <rect>
-     <x>20</x>
-     <y>20</y>
+     <x>10</x>
+     <y>90</y>
      <width>231</width>
      <height>241</height>
     </rect>
@@ -37,8 +37,8 @@
     <rect>
      <x>260</x>
      <y>30</y>
-     <width>471</width>
-     <height>141</height>
+     <width>661</width>
+     <height>331</height>
     </rect>
    </property>
   </widget>
@@ -46,8 +46,8 @@
    <property name="geometry">
     <rect>
      <x>260</x>
-     <y>180</y>
-     <width>471</width>
+     <y>380</y>
+     <width>661</width>
      <height>31</height>
     </rect>
    </property>
@@ -56,7 +56,7 @@
    <property name="geometry">
     <rect>
      <x>410</x>
-     <y>220</y>
+     <y>420</y>
      <width>141</width>
      <height>31</height>
     </rect>
@@ -69,7 +69,7 @@
    <property name="geometry">
     <rect>
      <x>260</x>
-     <y>220</y>
+     <y>420</y>
      <width>141</width>
      <height>31</height>
     </rect>

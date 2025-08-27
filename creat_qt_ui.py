@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QApplication, QDialog, QListWidgetItem
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QColor
 from PyQt5 import uic
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 import sys
@@ -11,6 +11,7 @@ from cloud_keys import OPENAI_API_KEY
 # 背景 Worker：收 AI stream
 # -----------------------
 class ChatWorker(QThread):
+    # 兩組Signal渠道
     new_token = pyqtSignal(str)   # 每次收到 token 就丟給 UI
     finished = pyqtSignal(str)    # stream 結束後丟完整文字
 
@@ -46,7 +47,7 @@ class AgentApp(QDialog):
     def __init__(self):
         super().__init__()
         uic.loadUi("agent.ui", self)
-        self.setFixedSize(750, 270)
+        self.setFixedSize(935, 472)
 
         self.send_btn.clicked.connect(self.record_conversation)
         self.clear_btn.clicked.connect(self.clear_input)
@@ -76,13 +77,15 @@ class AgentApp(QDialog):
     def record_user_message(self, message):
         user_item = QListWidgetItem(f"你說: {message}")
         user_item.setFont(QFont("Arial", 12))
-        user_item.setTextAlignment(Qt.AlignRight)
+        user_item.setBackground(QColor("#CDE7CD"))
+        user_item.setTextAlignment(Qt.AlignLeft)
         self.history_widget.addItem(user_item)
 
     def record_agent_response(self, user_message):
         # 預留一個空 item
         self.ai_item = QListWidgetItem("")
         self.ai_item.setFont(QFont("Arial", 12))
+        self.ai_item.setBackground(QColor("#FFFFFF"))
         self.ai_item.setTextAlignment(Qt.AlignLeft)
         self.history_widget.addItem(self.ai_item)
 
@@ -97,11 +100,15 @@ class AgentApp(QDialog):
         """動態更新 AI 回覆"""
         if self.ai_item:
             self.ai_item.setText(self.ai_item.text() + token)
+            if self.ai_item.text():  # 有東西
+                self.ai_item.setBackground(QColor("#FFEACF"))
             self.history_widget.scrollToBottom()
 
     def finish_ai_item(self, full_text):
         """stream 結束"""
         print("完整回覆：", full_text)
+        print(f"Update History Size:{len(self.chat_history)}")
+        # list不需要更新，初始化用的chat_history會直接被reference
 
 
 if __name__ == "__main__":
