@@ -14,28 +14,13 @@ import pyttsx3
 
 import time
 import os
-
-
-class TTSWorker(QThread):
-    done = pyqtSignal(str)   # 音檔生成完後，把句子送回去顯示
-
-    def __init__(self, text):
-        super().__init__()
-        self.text = text
-        self.engine = pyttsx3.init()
-
-    def run(self):
-
-        timestamp = int(time.time() * 1000)  # 毫秒級時間戳
-        filename = f"temp_{timestamp}.wav"
-        self.engine.save_to_file(self.text, filename)
-        self.engine.runAndWait()
-        self.done.emit(filename)   # 音檔生成完成
-
-
 # -----------------------
-# 背景 Worker：收 AI stream
+# 背景 Worker：
+# ChatWorker: Get AI Streaming Response
+# TTS Worker: AI response to speech
 # -----------------------
+
+
 class ChatWorker(QThread):
     # 兩組Signal渠道
     new_token = pyqtSignal(str)   # 每次收到 token 就丟給 UI
@@ -67,9 +52,28 @@ class ChatWorker(QThread):
         self.finished.emit(full_reply)
 
 
+class TTSWorker(QThread):
+    done = pyqtSignal(str)   # 音檔生成完後，把句子送回去顯示
+
+    def __init__(self, text):
+        super().__init__()
+        self.text = text
+        self.engine = pyttsx3.init()
+
+    def run(self):
+
+        timestamp = int(time.time() * 1000)  # 毫秒級時間戳
+        filename = f"tts_files/temp_{timestamp}.wav"
+        self.engine.save_to_file(self.text, filename)
+        self.engine.runAndWait()   # 執行音訊檔案生成
+        self.done.emit(filename)   # 音檔生成完成
+
+
 # -----------------------
 # 主程式 UI
 # -----------------------
+
+
 class AgentApp(QDialog):
     def __init__(self):
         super().__init__()
