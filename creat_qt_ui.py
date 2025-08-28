@@ -116,7 +116,7 @@ class AgentApp(QDialog):
         # 啟動背景 thread
         self.worker = ChatWorker(
             self.openai_client, self.chat_history, user_message)
-        self.worker.new_token.connect(self.update_ai_response)   # 即時更新
+        self.worker.new_token.connect(self.collect_response_tokens)   # 即時更新
         self.worker.finished.connect(self.finish_ai_item)    # stream 結束
         self.worker.start()
 
@@ -132,7 +132,7 @@ class AgentApp(QDialog):
         # 文字泡泡
         label = QLabel(message)
         label.setWordWrap(True)
-        label.setFont(QFont("Arial", 12))
+        label.setMinimumHeight(25)
 
         # 顏色依 sender 區分
         if sender == "user":
@@ -150,7 +150,7 @@ class AgentApp(QDialog):
         self.history_widget.scrollToBottom()
         return item
 
-    def update_ai_response(self, token):
+    def collect_response_tokens(self, token):
         # 累積文字
         self.partial_sentence += token
 
@@ -158,7 +158,7 @@ class AgentApp(QDialog):
         if token in ["。", "，", "！", "？", ".", "!", "?"]:
             sentence = self.partial_sentence.strip()
             self.partial_sentence = ""
-            self.send_sentence_to_tts(sentence)   # 丟去生成音檔
+            self.generate_sentence_speech(sentence)   # 丟去生成音檔
 
     def finish_ai_item(self, full_text):
         """stream 結束"""
@@ -166,7 +166,7 @@ class AgentApp(QDialog):
         print(f"Update History Size:{len(self.chat_history)}")
         # list不需要更新，初始化用的chat_history會直接被reference
 
-    def send_sentence_to_tts(self, sentence):
+    def generate_sentence_speech(self, sentence):
         tts_worker = TTSWorker(sentence)
         tts_worker.done.connect(
             lambda filename, w=tts_worker, s=sentence:
@@ -191,18 +191,20 @@ class AgentApp(QDialog):
         if not self.tts_queue:
             return
         filename, sentence = self.tts_queue.pop(0)
+        self.update_ai_ui(sentence)  # 顯示句子
+        # 播音檔
+        self.player.setMedia(QMediaContent(QUrl.fromLocalFile(filename)))
+        self.player.play()
 
+    def update_ai_ui(self, next_sentence):
         # 1. 顯示句子（與聲音同步）
-        self.ai_label.setText(self.ai_label.text() + sentence)
+        self.ai_label.setText(self.ai_label.text() + next_sentence)
         # 2. 強制重新計算尺寸
         self.ai_label.adjustSize()
         # 3. 根據尺寸更新 QListWidgetItem 高度
         self.ai_item.setSizeHint(self.ai_label.sizeHint())
         # 4. 自動捲動到底
         self.history_widget.scrollToBottom()
-        # 播音檔
-        self.player.setMedia(QMediaContent(QUrl.fromLocalFile(filename)))
-        self.player.play()
 
 
 if __name__ == "__main__":
