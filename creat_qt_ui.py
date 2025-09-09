@@ -1,14 +1,10 @@
-import os
-from PyQt5.QtGui import QPixmap, QPainter
 from PyQt5.QtWidgets import QApplication, QLabel, QWidget, QVBoxLayout
-from PyQt5.QtCore import QTimer, QUrl, pyqtSignal
+from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QListWidgetItem,
     QWidget, QLabel, QHBoxLayout
 )
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtCore import QUrl, QThread, pyqtSignal
-from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
+from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5 import uic
 
 import sys
@@ -236,7 +232,6 @@ class AgentApp(QDialog):
         self.tts_workers.append(tts_worker)
 
     def on_tts_done(self, filename, sentence, worker):
-        print(f"TTS file generated: {filename}")
         # 加入播放佇列
         self.tts_queue.append((filename, sentence))
         self.tts_workers.remove(worker)
@@ -252,38 +247,16 @@ class AgentApp(QDialog):
         self.lipsync_workers.append(lipsync_worker)
 
     def on_lipsync_done(self, lipsync_data, worker):
-        print("Lipsync Done received.")
         self.lipsync_data_queue.append(lipsync_data)  # 放入嘴型佇列
         self.lipsync_workers.remove(worker)  # 移除 worker
         worker.deleteLater()
         self.play_next_in_queue()  # 嘗試播放下一個
 
     def play_next_in_queue(self):
-        status_map = {
-            QMediaPlayer.NoMedia: "NoMedia",
-            QMediaPlayer.LoadingMedia: "LoadingMedia",
-            QMediaPlayer.LoadedMedia: "LoadedMedia",
-            QMediaPlayer.StalledMedia: "StalledMedia",
-            QMediaPlayer.BufferingMedia: "BufferingMedia",
-            QMediaPlayer.BufferedMedia: "BufferedMedia",
-            QMediaPlayer.EndOfMedia: "EndOfMedia",
-            QMediaPlayer.InvalidMedia: "InvalidMedia",
-        }
-
-        state_map = {
-            QMediaPlayer.StoppedState: "StoppedState",   # 0
-            QMediaPlayer.PlayingState: "PlayingState",   # 1
-            QMediaPlayer.PausedState:  "PausedState",    # 2
-        }
-
         # 如果正在撥放就不觸發
-        current_status = self.lip_player.player.mediaStatus()
-        current_state = self.lip_player.player.state()
-        print(
-            f"Current Media Status: {current_status} ({status_map.get(current_status, 'Unknown')})")
-        print(
-            f"Current Play State: {current_state} ({state_map.get(current_state, 'Unknown')})")
-        if not ((current_status == QMediaPlayer.NoMedia or current_status == QMediaPlayer.EndOfMedia) and current_state == QMediaPlayer.StoppedState):
+        is_player_idle = self.lip_player.is_player_idle()
+        if not is_player_idle:
+            print("Player is busy, wait for next signal.")
             return
 
         if not self.tts_queue:  # 無聲音檔時離開

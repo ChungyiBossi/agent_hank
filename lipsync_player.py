@@ -7,6 +7,23 @@ from PyQt5.QtGui import QPixmap, QPainter
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 import os
 
+STATUS_MAP = {
+    QMediaPlayer.NoMedia: "NoMedia",  # 0
+    QMediaPlayer.LoadingMedia: "LoadingMedia",  # 1
+    QMediaPlayer.LoadedMedia: "LoadedMedia",  # 2
+    QMediaPlayer.StalledMedia: "StalledMedia",  # 3
+    QMediaPlayer.BufferingMedia: "BufferingMedia",  # 4
+    QMediaPlayer.BufferedMedia: "BufferedMedia",  # 5
+    QMediaPlayer.EndOfMedia: "EndOfMedia",  # 6
+    QMediaPlayer.InvalidMedia: "InvalidMedia",  # 7
+}
+
+STATE_MAP = {
+    QMediaPlayer.StoppedState: "StoppedState",   # 0
+    QMediaPlayer.PlayingState: "PlayingState",   # 1
+    QMediaPlayer.PausedState:  "PausedState",    # 2
+}
+
 
 class LipSyncPlayer(QWidget):
     finished = pyqtSignal()
@@ -65,7 +82,6 @@ class LipSyncPlayer(QWidget):
         self.player.mediaStatusChanged.connect(self.on_media_status_changed)
 
     def update_lipsync_data(self, lipsync_data, wav_file):
-        print("update_lipsync_data called")
         self.lipsync_data = lipsync_data
         self.player.setMedia(QMediaContent(QUrl.fromLocalFile(wav_file)))
         self.last_shape = "X"
@@ -109,10 +125,15 @@ class LipSyncPlayer(QWidget):
 
     def on_media_status_changed(self, status):
         if status == QMediaPlayer.EndOfMedia:
-            print("Playback finished.")
             self.timer.stop()
             self.label.setPixmap(self.default_pixmap)
             self.finished.emit()  # 發出結束訊號
+
+    def is_player_idle(self):
+        current_status = self.player.mediaStatus()
+        current_state = self.player.state()
+        # print(f"Media Status: {current_status}, Play State: {current_state}")
+        return (current_status == QMediaPlayer.NoMedia or current_status == QMediaPlayer.EndOfMedia) and current_state == QMediaPlayer.StoppedState
 
     def merge_pixmaps(self, base, overlay, x=100, y=250):
         """將 overlay 疊加到 base 的 (x, y) 位置"""
