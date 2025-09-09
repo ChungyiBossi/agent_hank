@@ -90,8 +90,8 @@ class LipSyncPlayer(QWidget):
     def start(self):
         # print("start called")
         self.start_time = time.time()
-        self.player.play()
         self.timer.start()
+        self.player.play()
 
     def update_mouth(self):
         # print("update_mouth called")
