@@ -150,7 +150,6 @@ class AgentApp(QDialog):
         # LipSync Player
         self.lip_player = LipSyncPlayer(
             avatar_pixmap=self.agent_pixmap,
-            wav_file="test_code/test_audio.wav",
             base_image="images/hank/hank_no_mouth.png",
             mouth_prefix="images/hank/hank"
         )
@@ -253,15 +252,39 @@ class AgentApp(QDialog):
         self.lipsync_workers.append(lipsync_worker)
 
     def on_lipsync_done(self, lipsync_data, worker):
-        print("Lipsync data received.")
+        print("Lipsync Done received.")
         self.lipsync_data_queue.append(lipsync_data)  # 放入嘴型佇列
         self.lipsync_workers.remove(worker)  # 移除 worker
         worker.deleteLater()
         self.play_next_in_queue()  # 嘗試播放下一個
 
     def play_next_in_queue(self):
+        status_map = {
+            QMediaPlayer.NoMedia: "NoMedia",
+            QMediaPlayer.LoadingMedia: "LoadingMedia",
+            QMediaPlayer.LoadedMedia: "LoadedMedia",
+            QMediaPlayer.StalledMedia: "StalledMedia",
+            QMediaPlayer.BufferingMedia: "BufferingMedia",
+            QMediaPlayer.BufferedMedia: "BufferedMedia",
+            QMediaPlayer.EndOfMedia: "EndOfMedia",
+            QMediaPlayer.InvalidMedia: "InvalidMedia",
+        }
 
-        # 需要加一個播放中旗標，避免同時觸發多次
+        state_map = {
+            QMediaPlayer.StoppedState: "StoppedState",   # 0
+            QMediaPlayer.PlayingState: "PlayingState",   # 1
+            QMediaPlayer.PausedState:  "PausedState",    # 2
+        }
+
+        # 如果正在撥放就不觸發
+        current_status = self.lip_player.player.mediaStatus()
+        current_state = self.lip_player.player.state()
+        print(
+            f"Current Media Status: {current_status} ({status_map.get(current_status, 'Unknown')})")
+        print(
+            f"Current Play State: {current_state} ({state_map.get(current_state, 'Unknown')})")
+        if not ((current_status == QMediaPlayer.NoMedia or current_status == QMediaPlayer.EndOfMedia) and current_state == QMediaPlayer.StoppedState):
+            return
 
         if not self.tts_queue:  # 無聲音檔時離開
             print("No TTS data!")

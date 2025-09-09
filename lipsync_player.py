@@ -14,7 +14,6 @@ class LipSyncPlayer(QWidget):
     def __init__(
         self,
         base_image,
-        wav_file="",
         avatar_pixmap=None,
         mouth_prefix="./images/hank/hank"
     ):
@@ -53,9 +52,7 @@ class LipSyncPlayer(QWidget):
         self.label.setPixmap(self.default_pixmap)
 
         # 音檔播放器
-        wav_file = os.path.abspath(wav_file)
         self.player = QMediaPlayer()
-        self.player.setMedia(QMediaContent(QUrl.fromLocalFile(wav_file)))
         self.player.setVolume(100)
 
         # 計時器控制嘴型
@@ -93,7 +90,7 @@ class LipSyncPlayer(QWidget):
                 break
         self.last_shape = shape
 
-        print(f"Time: {current_time:.2f}, Shape: {shape}")
+        # print(f"Time: {current_time:.2f}, Shape: {shape}")
         # 疊圖
         merged = QPixmap(self.base_pixmap)  # 複製底圖
         if shape in self.mouth_images:
@@ -112,7 +109,9 @@ class LipSyncPlayer(QWidget):
 
     def on_media_status_changed(self, status):
         if status == QMediaPlayer.EndOfMedia:
+            print("Playback finished.")
             self.timer.stop()
+            self.label.setPixmap(self.default_pixmap)
             self.finished.emit()  # 發出結束訊號
 
     def merge_pixmaps(self, base, overlay, x=100, y=250):
@@ -127,7 +126,6 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     window = LipSyncPlayer(
-        wav_file="",
         base_image="images/hank/hank_no_mouth.png",
         mouth_prefix="images/hank/hank"
     )
