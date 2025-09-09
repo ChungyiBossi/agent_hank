@@ -13,28 +13,28 @@ class LipSyncPlayer(QWidget):
 
     def __init__(
         self,
-        wav_file,
         base_image,
+        wav_file="",
         avatar_pixmap=None,
         mouth_prefix="./images/hank/hank"
     ):
         super().__init__()
-        self.setWindowTitle("Lip Sync Demo")
 
         # QLabel 顯示角色立繪 + 嘴型
-        self.label = avatar_pixmap if avatar_pixmap else QLabel(self)
-        self.label.setFixedSize(400, 400)
-        self.label.setScaledContents(True)
-        self.last_shape = "X"  # 初始嘴型可用 X (閉嘴)
+        if avatar_pixmap:
+            self.label = avatar_pixmap
+        else:  # Unittest
+            self.setWindowTitle("Lip Sync Demo")
+            self.label = QLabel(self)
+            self.label.setFixedSize(400, 400)
+            self.label.setScaledContents(True)
 
-        layout = QVBoxLayout()
-        layout.addWidget(self.label)
-        self.setLayout(layout)
-
-        # 立繪底圖
-        self.base_pixmap = QPixmap(base_image)
+            layout = QVBoxLayout()
+            layout.addWidget(self.label)
+            self.setLayout(layout)
 
         # 嘴型資料
+        self.last_shape = "X"  # 初始嘴型可用 X (閉嘴)
         self.lipsync_data = list()
 
         # 嘴型圖片 cache
@@ -42,6 +42,15 @@ class LipSyncPlayer(QWidget):
             shape: QPixmap(
                 f"{mouth_prefix}_{shape}.png") for shape in "ABCDEFGHX"
         }
+
+        # 立繪底圖
+        self.base_pixmap = QPixmap(base_image)
+        self.default_pixmap = self.merge_pixmaps(
+            base=QPixmap(base_image),
+            overlay=self.mouth_images["X"],  # 初始嘴型 X (閉嘴)
+            x=100, y=250
+        )
+        self.label.setPixmap(self.default_pixmap)
 
         # 音檔播放器
         wav_file = os.path.abspath(wav_file)
@@ -88,10 +97,16 @@ class LipSyncPlayer(QWidget):
         # 疊圖
         merged = QPixmap(self.base_pixmap)  # 複製底圖
         if shape in self.mouth_images:
-            painter = QPainter(merged)
-            # 調整嘴巴位置 (x, y)
-            painter.drawPixmap(100, 250, self.mouth_images[shape])
-            painter.end()
+            merged = self.merge_pixmaps(
+                base=merged,
+                overlay=self.mouth_images[shape],
+            )
+        else:
+            print(f"Warning: No image for shape '{shape}'")
+            merged = self.merge_pixmaps(
+                base=merged,
+                overlay=self.mouth_images["X"],  # Default to closed mouth
+            )
 
         self.label.setPixmap(merged)
 
@@ -100,12 +115,19 @@ class LipSyncPlayer(QWidget):
             self.timer.stop()
             self.finished.emit()  # 發出結束訊號
 
+    def merge_pixmaps(self, base, overlay, x=100, y=250):
+        """將 overlay 疊加到 base 的 (x, y) 位置"""
+        painter = QPainter(base)
+        painter.drawPixmap(x, y, overlay)
+        painter.end()
+        return base
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     window = LipSyncPlayer(
-        wav_file="test_code/test_audio.wav",
+        wav_file="",
         base_image="images/hank/hank_no_mouth.png",
         mouth_prefix="images/hank/hank"
     )

@@ -1,24 +1,75 @@
+import os
+from PyQt5.QtGui import QPixmap, QPainter
+from PyQt5.QtWidgets import QApplication, QLabel, QWidget, QVBoxLayout
+from PyQt5.QtCore import QTimer, QUrl, pyqtSignal
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QListWidgetItem,
     QWidget, QLabel, QHBoxLayout
 )
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import QUrl, QThread, pyqtSignal
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5 import uic
 
 import sys
 from openai import OpenAI
+from lipsync_player import LipSyncPlayer
 from cloud_keys import OPENAI_API_KEY
 import pyttsx3
 
 import time
-import os
+import json
+import subprocess
+
 # -----------------------
 # 背景 Worker：
 # ChatWorker: Get AI Streaming Response
 # TTS Worker: AI response to speech
+# LipSync Worker: wav to lipsync.json
+# LipSyncPlayer: play wav + lipsync
 # -----------------------
+
+
+class LipSyncWorker(QThread):
+    # 當分析完成後，發出嘴型資料
+    finished = pyqtSignal(list)
+    error = pyqtSignal(str)
+
+    def __init__(self, wav_file, parent=None, lipsync_data=None):
+        super().__init__(parent)
+        self.wav_file = wav_file
+        self.lipsync_data = lipsync_data
+
+    def run(self):
+        try:
+            # 呼叫 rhubarb CLI
+            json_name = self.wav_file.replace(".wav", "_lipsync.json")
+            result = subprocess.run(
+                [
+                    ".\\Rhubarb-Lip-Sync\\rhubarb.exe",
+                    "-f", "json",               # 輸出格式 JSON
+                    self.wav_file,              # 音檔路徑
+                    "-o", json_name        # 輸出檔案
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+
+            if result.returncode != 0:
+                self.error.emit(result.stderr)
+                return
+
+            # 讀取 lipsync.json
+            print(f"[Lipsync] Reading {json_name}.")
+            with open(json_name, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            # 把結果傳回主執行緒
+            self.finished.emit(data["mouthCues"])
+
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class ChatWorker(QThread):
@@ -91,8 +142,19 @@ class AgentApp(QDialog):
         # self.tts_engine = pyttsx3.init()
         self.tts_workers = []  # 存所有活著的 worker
         self.tts_queue = []      # 句子 + 音檔檔名
-        self.player = QMediaPlayer()
-        self.player.mediaStatusChanged.connect(self.on_media_status_changed)
+
+        # LipSync cues
+        self.lipsync_workers = []
+        self.lipsync_data_queue = []  # 存放待處理的音檔
+
+        # LipSync Player
+        self.lip_player = LipSyncPlayer(
+            avatar_pixmap=self.agent_pixmap,
+            wav_file="test_code/test_audio.wav",
+            base_image="images/hank/hank_no_mouth.png",
+            mouth_prefix="images/hank/hank"
+        )
+        self.lip_player.finished.connect(self.play_next_in_queue)  # 播完一個接著播下一個
 
     def clear_input(self):
         self.user_input.clear()
@@ -175,26 +237,49 @@ class AgentApp(QDialog):
         self.tts_workers.append(tts_worker)
 
     def on_tts_done(self, filename, sentence, worker):
+        print(f"TTS file generated: {filename}")
         # 加入播放佇列
         self.tts_queue.append((filename, sentence))
         self.tts_workers.remove(worker)
         worker.deleteLater()
-        # 如果 player 沒在播，就開始播放
-        if self.player.state() != QMediaPlayer.PlayingState:
-            self.play_next_in_queue()
 
-    def on_media_status_changed(self, status):
-        if status == QMediaPlayer.EndOfMedia:
-            self.play_next_in_queue()
+        # 接著丟給 LipSyncWorker
+        lipsync_worker = LipSyncWorker(filename)
+        lipsync_worker.finished.connect(
+            lambda lipsync_data,  w=lipsync_worker:
+            self.on_lipsync_done(lipsync_data, w)
+        )
+        lipsync_worker.start()
+        self.lipsync_workers.append(lipsync_worker)
+
+    def on_lipsync_done(self, lipsync_data, worker):
+        print("Lipsync data received.")
+        self.lipsync_data_queue.append(lipsync_data)  # 放入嘴型佇列
+        self.lipsync_workers.remove(worker)  # 移除 worker
+        worker.deleteLater()
+        self.play_next_in_queue()  # 嘗試播放下一個
 
     def play_next_in_queue(self):
-        if not self.tts_queue:
+
+        # 需要加一個播放中旗標，避免同時觸發多次
+
+        if not self.tts_queue:  # 無聲音檔時離開
+            print("No TTS data!")
             return
-        filename, sentence = self.tts_queue.pop(0)
-        self.update_ai_ui(sentence)  # 顯示句子
+        if not self.lipsync_data_queue:  # 無嘴形時離開
+            print("No lipsync data!")
+            return
+
         # 播音檔
-        self.player.setMedia(QMediaContent(QUrl.fromLocalFile(filename)))
-        self.player.play()
+        filename, sentence = self.tts_queue.pop(0)
+        lipsync_data = self.lipsync_data_queue.pop(0)
+        self.update_ai_ui(sentence)  # 顯示句子
+        self.lip_player.update_lipsync_data(
+            lipsync_data=lipsync_data,
+            wav_file=filename
+        )
+        self.lip_player.start()
+        print(f"[Play] {filename}")
 
     def update_ai_ui(self, next_sentence):
         # 1. 顯示句子（與聲音同步）
